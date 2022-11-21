@@ -28,7 +28,7 @@ object UsbPTT {
 		val last_use = prefs.getString(deviceHandle(dev), null)
 		if (last_use == null)
 			return false
-		prefs.edit().putString("proto", last_use)
+		prefs.edit().putString("ptt", last_use)
 			    .putString("link", "usb").commit()
 		true
 	}
@@ -37,7 +37,7 @@ object UsbPTT {
 class UsbPTT(service : AprsService, prefs : PrefsWrapper) extends AprsBackend(prefs) {
 	val TAG = "APRSdroid.Usb"
 
-	val USB_PERM_ACTION = "org.aprsdroid.app.UsbTnc.PERM"
+	val USB_PERM_ACTION = "org.aprsdroid.app.UsbPtt.PERM"
 	val ACTION_USB_ATTACHED = "android.hardware.usb.action.USB_DEVICE_ATTACHED"
 	val ACTION_USB_DETACHED = "android.hardware.usb.action.USB_DEVICE_DETACHED"
 
@@ -51,27 +51,13 @@ class UsbPTT(service : AprsService, prefs : PrefsWrapper) extends AprsBackend(pr
 	val intent = new Intent(USB_PERM_ACTION)
 	val pendingIntent = PendingIntent.getBroadcast(service, 0, intent, 0)
 
-	val receiver = new BroadcastReceiver() {
-		override def onReceive(ctx : Context, i : Intent) {
-			Log.d(TAG, "onReceive: " + i)
-			if (i.getAction() == ACTION_USB_DETACHED) {
-				log("USB device detached.")
-				ctx.stopService(AprsService.intent(ctx, AprsService.SERVICE))
-				return
-			}
-			val granted = i.getExtras().getBoolean(UsbManager.EXTRA_PERMISSION_GRANTED)
-			if (!granted) {
-				service.postAbort(service.getString(R.string.p_serial_noperm))
-				return
-			}
-			log("Obtained USB permissions.")
-			thread = new UsbThread()
-			thread.start()
-		}
-	}
+    def  startPTT() = {
+            con.RTS = false;
+    }
 
-	var proto : TncProto = null
-	var sis : SerialInputStream = null
+    def endPTT() ={
+        ser.RTS = false
+    }
 
 	def start() = {
 		val filter = new IntentFilter(USB_PERM_ACTION)
@@ -88,7 +74,7 @@ class UsbPTT(service : AprsService, prefs : PrefsWrapper) extends AprsBackend(pr
 	}
 
 	def requestPermissions() {
-		Log.d(TAG, "UsbTnc.requestPermissions");
+		Log.d(TAG, "UsbPtt.requestPermissions");
 		val dl = usbManager.getDeviceList();
 		var requested = false
 		import scala.collection.JavaConversions._
@@ -107,10 +93,6 @@ class UsbPTT(service : AprsService, prefs : PrefsWrapper) extends AprsBackend(pr
 		service.postAbort(service.getString(R.string.p_serial_notfound))
 	}
 
-	def update(packet : APRSPacket) : String = {
-		proto.writePacket(packet)
-		"USB OK"
-	}
 
 	def stop() {
 		if (alreadyRunning)
@@ -134,7 +116,7 @@ class UsbPTT(service : AprsService, prefs : PrefsWrapper) extends AprsBackend(pr
 			proto.stop()
 	}
 
-	class UsbThread()
+	class UsbConn()
 			extends Thread("APRSdroid USB connection") {
 		val TAG = "UsbThread"
 		var running = true
@@ -156,37 +138,16 @@ class UsbPTT(service : AprsService, prefs : PrefsWrapper) extends AprsBackend(pr
 			ser.setDataBits(UsbSerialInterface.DATA_BITS_8)
 			ser.setStopBits(UsbSerialInterface.STOP_BITS_1)
 			ser.setParity(UsbSerialInterface.PARITY_NONE)
-			ser.setFlowControl(UsbSerialInterface.FLOW_CONTROL_OFF)
+            ser.setFlowControl(UsbSerialInterface.FLOW_CONTROL_RTS_CTS)
 
 			// success: remember this for usb-attach launch
-			prefs.prefs.edit().putString(UsbTnc.deviceHandle(dev), prefs.getString("proto", "kiss")).commit()
+			prefs.prefs.edit().putString(UsbPTT.deviceHandle(dev), prefs.getString("proto", "kiss")).commit()
 
 			log("Opened " + ser.getClass().getSimpleName() + " at " + baudrate + "bd")
-			sis = new SerialInputStream(ser)
-			try {
-				proto = AprsBackend.instanciateProto(service, sis, new SerialOutputStream(ser))
-			} catch {
-				case e : IllegalArgumentException =>
-				service.postAbort(e.getMessage()); running = false
-				return
-			}
-			service.postPosterStarted()
-			while (running) {
-				try {
-					val line = proto.readPacket()
-					Log.d(TAG, "recv: " + line)
-					service.postSubmit(line)
-				} catch {
-				case e : Exception =>
-					Log.d(TAG, "readPacket exception: " + e.toString())
-					if (running) {
-						service.postAbort(e.toString()); running = false
-					}
-				}
-			}
+			
+
 			Log.d(TAG, "terminate()")
 		}
-
 
 	}
 
