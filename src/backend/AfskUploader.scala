@@ -18,14 +18,17 @@ class AfskUploader(service : AprsService, prefs : PrefsWrapper) extends AprsBack
 	var Digis = prefs.getString("digi_path", "WIDE1-1")
 	val use_hq = prefs.getAfskHQ()
 	val use_bt = prefs.getAfskBluetooth()
+	val use_rts = prefs.getAfskRTS()
+	val ptt_portname = prefs.getAfskPTTPort()
 	val samplerate = if (use_bt) 16000 else 22050
 	val out_type = prefs.getAfskOutput()
 	val in_type = if (use_bt) /*VOICE_CALL*/1 else /*MIC*/1
 	val output = new Afsk(out_type, samplerate)
+	val ptt_connection = 
 	val aw = new AfskInWrapper(use_hq, this, in_type, samplerate/2) // 8000 / 11025
 
 	output.setVolume(AudioTrack.getMaxVolume())
-	
+	val usbconnection = 
 	val btScoReceiver = new BroadcastReceiver() {
 		override def onReceive(ctx : Context, i : Intent) {
 			val state = i.getIntExtra(AudioManager.EXTRA_SCO_AUDIO_STATE, -1)
@@ -64,7 +67,16 @@ class AfskUploader(service : AprsService, prefs : PrefsWrapper) extends AprsBack
 	}
 
 	def sendMessage(msg : Message) : Boolean = {
-		output.sendMessage(msg)
+
+		if(use_rts)
+		{
+
+			output.sendMessage(msg)
+		}
+		else
+		{
+			output.sendMessage(msg)
+		}
 	}
 
 	def update(packet : APRSPacket) : String = {
